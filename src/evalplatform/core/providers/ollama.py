@@ -42,12 +42,11 @@ class OllamaProvider:
         }
 
         t0 = time.monotonic()
-        async with self._semaphore:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(
-                    f"{self._base_url}/v1/chat/completions",
-                    json=payload,
-                )
+        async with self._semaphore, httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                f"{self._base_url}/v1/chat/completions",
+                json=payload,
+            )
         latency_ms = (time.monotonic() - t0) * 1000
 
         resp.raise_for_status()

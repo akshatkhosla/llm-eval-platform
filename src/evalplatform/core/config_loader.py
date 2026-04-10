@@ -24,9 +24,7 @@ def load_config(path: str | Path) -> EvalConfig:
     eval_block: dict[str, object] = raw["eval"]
 
     providers_raw: dict[str, dict[str, object]] = raw.get("providers", {})
-    providers = {
-        name: ProviderConfig(**cfg) for name, cfg in providers_raw.items()
-    }
+    providers = {name: ProviderConfig(**cfg) for name, cfg in providers_raw.items()}
 
     return EvalConfig(
         model=eval_block["model"],  # type: ignore[arg-type]
@@ -34,4 +32,5 @@ def load_config(path: str | Path) -> EvalConfig:
         timeout_seconds=eval_block.get("timeout_seconds", 30),  # type: ignore[arg-type]
         judges=eval_block["judges"],  # type: ignore[arg-type]
         providers=providers,
+        max_concurrency=eval_block.get("max_concurrency", 10),  # type: ignore[arg-type]
     )
