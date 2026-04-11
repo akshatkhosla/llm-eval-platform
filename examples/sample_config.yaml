@@ -1,0 +1,21 @@
+eval:
+  model: gemini/gemini-2.5-flash-lite
+  dataset: dataset.jsonl
+  timeout_seconds: 60
+  max_concurrency: 1
+  judges:
+    - type: llm
+      model: gemini/gemini-2.5-flash
+      rubric: >
+        Rate from 0 to 10 how faithfully and accurately the response answers
+        the question. A score of 10 means the answer is completely correct,
+        precise, and directly addresses the question. A score of 0 means the
+        answer is wrong, off-topic, or contradicts established facts.
+        Consider correctness, completeness, and relevance.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 1

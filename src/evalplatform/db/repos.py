@@ -40,9 +40,22 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> EvalRun | None:
     return result.scalar_one_or_none()
 
 
-async def list_runs(session: AsyncSession) -> Sequence[EvalRun]:
-    """Return all EvalRuns ordered by creation time, newest first."""
-    result = await session.execute(select(EvalRun).order_by(EvalRun.created_at.desc()))
+async def list_runs(
+    session: AsyncSession,
+    *,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Sequence[EvalRun]:
+    """Return EvalRuns ordered by creation time, newest first.
+
+    Optionally filter by status and paginate with limit/offset.
+    """
+    stmt = select(EvalRun).order_by(EvalRun.created_at.desc())
+    if status is not None:
+        stmt = stmt.where(EvalRun.status == status)
+    stmt = stmt.limit(limit).offset(offset)
+    result = await session.execute(stmt)
     return result.scalars().all()
 
 
@@ -137,3 +150,29 @@ async def get_results_for_run(session: AsyncSession, run_id: uuid.UUID) -> Seque
         select(EvalResult).where(EvalResult.run_id == run_id).order_by(EvalResult.sample_index)
     )
     return result.scalars().all()
+
+
+async def save_trace(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    trace_data: dict[str, object],
+) -> EvalRun:
+    """Persist a serialised EvalTrace dict into the trace_data column of a run."""
+    run = await get_run(session, run_id)
+    if run is None:
+        raise ValueError(f"EvalRun {run_id} not found")
+    run.trace_data = trace_data
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+async def get_trace(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> dict[str, object] | None:
+    """Return the raw trace_data dict for a run, or None if not yet stored."""
+    run = await get_run(session, run_id)
+    if run is None:
+        return None
+    return run.trace_data  # type: ignore[return-value]

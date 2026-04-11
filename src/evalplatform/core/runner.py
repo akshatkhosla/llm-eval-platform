@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Coroutine
+from contextlib import nullcontext
 from pathlib import Path
 
 from evalplatform.core.judges import (
@@ -87,48 +88,90 @@ async def _evaluate_sample(
     config: EvalConfig,
     judges: list[BaseJudge],
     semaphore: asyncio.Semaphore,
+    tracer: object = None,
 ) -> SampleResult:
     """Run the target model and all judges for a single dataset row."""
     prompt = row["prompt"]
     expected = row.get("expected")
     metadata = {k: v for k, v in row.items() if k not in ("prompt", "expected")}
 
-    # Call the target model
-    try:
-        provider = get_provider(provider_name, model_name)
-        provider_cfg = config.providers.get(provider_name)
-        if provider_cfg and provider_cfg.base_url and hasattr(provider, "_base_url"):
-            provider._base_url = provider_cfg.base_url  # noqa: SLF001
-        async with semaphore:
-            llm_resp = await provider.generate(
-                prompt=prompt,
-                system=None,
-                temperature=0.0,
-                max_tokens=1024,
-            )
-        response_text = llm_resp.text
-    except Exception as exc:
-        logger.warning("Model call failed for row %d: %s", row_index, exc)
-        return SampleResult(
-            row_index=row_index,
-            prompt=prompt,
-            expected=expected,
-            status=SampleStatus.error,
-            error=str(exc),
-            metadata=metadata,
-        )
-
-    # Run all judges
-    judge_results = await asyncio.gather(
-        *(j.judge(prompt, response_text, expected) for j in judges),
-        return_exceptions=True,
+    sample_ctx = (
+        tracer.span("sample_execution", sample_index=row_index)  # type: ignore[union-attr]
+        if tracer is not None
+        else nullcontext()
     )
 
-    final_judge_results = []
-    for jr in judge_results:
-        if isinstance(jr, Exception):
-            from evalplatform.core.schemas import JudgeResult
+    async with sample_ctx as sample_span:
+        # Call the target model
+        try:
+            provider = get_provider(provider_name, model_name)
+            provider_cfg = config.providers.get(provider_name)
+            if provider_cfg and provider_cfg.base_url and hasattr(provider, "_base_url"):
+                provider._base_url = provider_cfg.base_url  # noqa: SLF001
 
+            llm_ctx = (
+                tracer.span(  # type: ignore[union-attr]
+                    "llm_call", provider=provider_name, model=model_name
+                )
+                if tracer is not None
+                else nullcontext()
+            )
+            async with llm_ctx as llm_span:
+                async with semaphore:
+                    llm_resp = await provider.generate(
+                        prompt=prompt,
+                        system=None,
+                        temperature=0.0,
+                        max_tokens=1024,
+                    )
+                if llm_span is not None:
+                    llm_span.attributes["input_tokens"] = llm_resp.input_tokens
+                    llm_span.attributes["output_tokens"] = llm_resp.output_tokens
+                    llm_span.attributes["latency_ms"] = llm_resp.latency_ms
+                    llm_span.attributes["status"] = "ok"
+            response_text = llm_resp.text
+
+        except Exception as exc:
+            logger.warning("Model call failed for row %d: %s", row_index, exc)
+            if sample_span is not None:
+                sample_span.attributes["status"] = "error"
+            return SampleResult(
+                row_index=row_index,
+                prompt=prompt,
+                expected=expected,
+                status=SampleStatus.error,
+                error=str(exc),
+                metadata=metadata,
+            )
+
+        # Run all judges (each wrapped in its own span when tracing is active)
+        async def _run_judge(j: BaseJudge) -> object:
+            judge_ctx = (
+                tracer.span(  # type: ignore[union-attr]
+                    "judge_execution",
+                    judge_index=j.judge_index,
+                    judge_type=j.__class__.__name__,
+                )
+                if tracer is not None
+                else nullcontext()
+            )
+            async with judge_ctx as judge_span:
+                result = await j.judge(prompt, response_text, expected)
+                if judge_span is not None:
+                    judge_span.attributes["judge_score"] = result.score
+                    judge_span.attributes["status"] = str(result.status)
+            return result
+
+        judge_results_raw = await asyncio.gather(
+            *(_run_judge(j) for j in judges),
+            return_exceptions=True,
+        )
+
+    from evalplatform.core.schemas import JudgeResult
+
+    final_judge_results = []
+    for jr in judge_results_raw:
+        if isinstance(jr, Exception):
             final_judge_results.append(
                 JudgeResult(
                     judge_type="unknown",
@@ -141,8 +184,10 @@ async def _evaluate_sample(
             final_judge_results.append(jr)
 
     has_errors = any(jr.status == JudgeResultStatus.error for jr in final_judge_results)
-
     status = SampleStatus.partial if has_errors else SampleStatus.passed
+
+    if sample_span is not None:
+        sample_span.attributes["status"] = str(status)
 
     return SampleResult(
         row_index=row_index,
@@ -178,6 +223,7 @@ def _compute_aggregates(samples: list[SampleResult]) -> dict[int, AggregateScore
 async def run_eval(
     config: EvalConfig,
     status_callback: StatusCallback = None,
+    tracer: object = None,
 ) -> EvalRunResult:
     """Execute an eval run end-to-end.
 
@@ -185,6 +231,8 @@ async def run_eval(
         config: Validated eval configuration.
         status_callback: Optional async callable ``(completed, total) -> None``
             invoked after each sample finishes.
+        tracer: Optional :class:`~evalplatform.tracing.instrumentor.Tracer` instance.
+            When provided, the runner wraps each step in a named span.
 
     Returns:
         EvalRunResult with per-sample scores and aggregates.
@@ -194,25 +242,34 @@ async def run_eval(
     rows = _load_dataset(config.dataset)
     semaphore = asyncio.Semaphore(config.max_concurrency)
 
+    root_ctx = (
+        tracer.span("eval_run", provider=provider_name, model=model_name)  # type: ignore[union-attr]
+        if tracer is not None
+        else nullcontext()
+    )
+
     sample_results: list[SampleResult] = []
 
-    async def _run_one(idx: int, row: dict[str, str]) -> SampleResult:
-        return await _evaluate_sample(
-            row_index=idx,
-            row=row,
-            provider_name=provider_name,
-            model_name=model_name,
-            config=config,
-            judges=judges,
-            semaphore=semaphore,
-        )
+    async with root_ctx:
 
-    tasks = [_run_one(idx, row) for idx, row in enumerate(rows)]
-    for completed, coro in enumerate(asyncio.as_completed(tasks), 1):
-        result = await coro
-        sample_results.append(result)
-        if status_callback is not None:
-            await status_callback(completed, len(rows))
+        async def _run_one(idx: int, row: dict[str, str]) -> SampleResult:
+            return await _evaluate_sample(
+                row_index=idx,
+                row=row,
+                provider_name=provider_name,
+                model_name=model_name,
+                config=config,
+                judges=judges,
+                semaphore=semaphore,
+                tracer=tracer,
+            )
+
+        tasks = [_run_one(idx, row) for idx, row in enumerate(rows)]
+        for completed, coro in enumerate(asyncio.as_completed(tasks), 1):
+            result = await coro
+            sample_results.append(result)
+            if status_callback is not None:
+                await status_callback(completed, len(rows))
 
     # Sort by row_index for deterministic output
     sample_results.sort(key=lambda r: r.row_index)

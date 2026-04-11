@@ -49,9 +49,10 @@ class EvalRun(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_samples: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    aggregate_scores: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
+    aggregate_scores: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    trace_data: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     results: Mapped[list[EvalResult]] = relationship(
         "EvalResult", back_populates="run", cascade="all, delete-orphan"

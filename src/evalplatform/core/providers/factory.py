@@ -21,7 +21,5 @@ def get_provider(provider_name: str, model: str) -> BaseLLMProvider:
     cls = _PROVIDERS.get(provider_name)
     if cls is None:
         supported = ", ".join(sorted(_PROVIDERS))
-        raise ValueError(
-            f"Unknown provider {provider_name!r}. Supported providers: {supported}"
-        )
+        raise ValueError(f"Unknown provider {provider_name!r}. Supported providers: {supported}")
     return cls(model=model)  # type: ignore[call-arg]
