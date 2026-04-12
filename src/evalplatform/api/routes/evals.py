@@ -42,6 +42,7 @@ class EvalRunSummary(BaseModel):
 class EvalRunDetail(EvalRunSummary):
     error_message: str | None
     aggregate_scores: dict[str, object] | None
+    config_yaml: str | None
 
 
 class EvalResultItem(BaseModel):
@@ -139,6 +140,7 @@ def _to_detail(run: object) -> EvalRunDetail:
         total_latency_ms=run.total_latency_ms,  # type: ignore[attr-defined]
         error_message=run.error_message,  # type: ignore[attr-defined]
         aggregate_scores=run.aggregate_scores,  # type: ignore[attr-defined]
+        config_yaml=run.config_yaml,  # type: ignore[attr-defined]
     )
 
 
@@ -217,6 +219,13 @@ async def list_evals(
     session: AsyncSession = Depends(get_session),
 ) -> list[EvalRunSummary]:
     """List eval runs with optional status filter and pagination."""
+    from evalplatform.db.models import RunStatus
+
+    if status is not None and status not in RunStatus.__members__:
+        valid = ", ".join(RunStatus.__members__)
+        raise HTTPException(
+            status_code=422, detail=f"Invalid status {status!r}. Valid values: {valid}"
+        )
     runs = await repos.list_runs(session, status=status, limit=limit, offset=offset)
     return [_to_summary(r) for r in runs]
 

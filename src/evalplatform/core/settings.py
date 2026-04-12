@@ -23,5 +23,9 @@ class Settings:
     def gemini_api_key(self) -> str:
         return _require_env("GEMINI_API_KEY")
 
+    @property
+    def dataset_root(self) -> str:
+        return os.environ.get("DATASET_ROOT", "data")
+
 
 settings = Settings()
