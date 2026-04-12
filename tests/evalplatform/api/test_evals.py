@@ -381,3 +381,197 @@ async def test_rerun_eval_not_found() -> None:
 
     assert response.status_code == 404
     assert str(unknown_id) in response.json()["detail"]
+
+
+# ── Comparison tests ───────────────────────────────────────────────────
+
+
+async def test_compare_evals_success() -> None:
+    """GET /compare returns 200 with per-evaluator scores and flagged samples."""
+    run_a_id = uuid.uuid4()
+    run_b_id = uuid.uuid4()
+    run_a = _make_run(id=run_a_id, model="gemini-1.5-flash")
+    run_b = _make_run(id=run_b_id, model="gemini-1.5-pro")
+
+    # Create results for both runs with different scores
+    results_a = [
+        _make_result(
+            run_a_id,
+            sample_index=0,
+            judge_scores={"contains_keyword": {"score": 8.0}},
+        ),
+        _make_result(
+            run_a_id,
+            sample_index=1,
+            judge_scores={"contains_keyword": {"score": 6.0}},
+        ),
+    ]
+    results_b = [
+        _make_result(
+            run_b_id,
+            sample_index=0,
+            judge_scores={"contains_keyword": {"score": 9.0}},
+        ),
+        _make_result(
+            run_b_id,
+            sample_index=1,
+            judge_scores={"contains_keyword": {"score": 5.0}},
+        ),
+    ]
+    _set_session_override()
+
+    with (
+        patch("evalplatform.db.repos.get_run") as mock_get_run,
+        patch(
+            "evalplatform.db.repos.get_results_for_runs",
+            new=AsyncMock(return_value={run_a_id: results_a, run_b_id: results_b}),
+        ),
+    ):
+        mock_get_run.side_effect = [run_a, run_b]
+        async with _async_client() as client:
+            response = await client.get(
+                f"{EVALS_URL}/compare",
+                params={"run_ids": f"{run_a_id},{run_b_id}", "flagged_limit": "1"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id_a"] == str(run_a_id)
+    assert body["run_id_b"] == str(run_b_id)
+
+    # Verify judge summaries
+    assert len(body["judge_summaries"]) == 1
+    judge_summary = body["judge_summaries"][0]
+    assert judge_summary["judge_key"] == "contains_keyword"
+    assert judge_summary["mean_a"] == 7.0  # (8 + 6) / 2
+    assert judge_summary["mean_b"] == 7.0  # (9 + 5) / 2
+    assert judge_summary["delta"] == 0.0
+
+    # Verify samples
+    assert len(body["samples"]) == 2
+    sample_0 = body["samples"][0]
+    assert sample_0["sample_index"] == 0
+    assert sample_0["judges"]["contains_keyword"]["score_a"] == 8.0
+    assert sample_0["judges"]["contains_keyword"]["score_b"] == 9.0
+    assert sample_0["judges"]["contains_keyword"]["delta"] == 1.0
+    assert sample_0["avg_delta"] == 1.0
+
+    # Verify flagged samples - with flagged_limit=1, only top 1 sample by abs(delta) is flagged
+    assert len(body["flagged_samples"]) == 1
+    assert body["flagged_samples"][0]["sample_index"] in [0, 1]  # Either could be first due to tie
+
+
+async def test_compare_evals_run_not_found() -> None:
+    """GET /compare returns 404 when one run doesn't exist."""
+    run_a_id = uuid.uuid4()
+    unknown_id = uuid.uuid4()
+    run_a = _make_run(id=run_a_id)
+    _set_session_override()
+
+    with patch("evalplatform.db.repos.get_run") as mock_get_run:
+        mock_get_run.side_effect = [run_a, None]
+        async with _async_client() as client:
+            response = await client.get(
+                f"{EVALS_URL}/compare",
+                params={"run_ids": f"{run_a_id},{unknown_id}"},
+            )
+
+    assert response.status_code == 404
+    assert str(unknown_id) in response.json()["detail"]
+
+
+async def test_compare_evals_invalid_run_ids_format() -> None:
+    """GET /compare returns 422 for invalid run_ids format."""
+    _set_session_override()
+
+    with patch("evalplatform.db.repos.get_run", new=AsyncMock(return_value=None)):
+        async with _async_client() as client:
+            # Only one UUID provided
+            response = await client.get(
+                f"{EVALS_URL}/compare",
+                params={"run_ids": str(uuid.uuid4())},
+            )
+
+    assert response.status_code == 422
+    assert "two comma-separated" in response.json()["detail"]
+
+
+async def test_compare_evals_invalid_uuid() -> None:
+    """GET /compare returns 422 for invalid UUID format."""
+    _set_session_override()
+
+    with patch("evalplatform.db.repos.get_run", new=AsyncMock(return_value=None)):
+        async with _async_client() as client:
+            response = await client.get(
+                f"{EVALS_URL}/compare",
+                params={"run_ids": f"{uuid.uuid4()},not-a-uuid"},
+            )
+
+    assert response.status_code == 422
+    assert "invalid UUID" in response.json()["detail"]
+
+
+async def test_compare_evals_mismatched_samples() -> None:
+    """GET /compare handles runs with different sample sets."""
+    run_a_id = uuid.uuid4()
+    run_b_id = uuid.uuid4()
+    run_a = _make_run(id=run_a_id)
+    run_b = _make_run(id=run_b_id)
+
+    # Run A has samples 0, 1; Run B has samples 1, 2
+    results_a = [
+        _make_result(run_a_id, sample_index=0, judge_scores={"j1": {"score": 8.0}}),
+        _make_result(run_a_id, sample_index=1, judge_scores={"j1": {"score": 6.0}}),
+    ]
+    results_b = [
+        _make_result(run_b_id, sample_index=1, judge_scores={"j1": {"score": 7.0}}),
+        _make_result(run_b_id, sample_index=2, judge_scores={"j1": {"score": 9.0}}),
+    ]
+    _set_session_override()
+
+    with (
+        patch("evalplatform.db.repos.get_run") as mock_get_run,
+        patch(
+            "evalplatform.db.repos.get_results_for_runs",
+            new=AsyncMock(return_value={run_a_id: results_a, run_b_id: results_b}),
+        ),
+    ):
+        mock_get_run.side_effect = [run_a, run_b]
+        async with _async_client() as client:
+            response = await client.get(
+                f"{EVALS_URL}/compare",
+                params={"run_ids": f"{run_a_id},{run_b_id}"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    # Should have all three samples (0, 1, 2)
+    assert len(body["samples"]) == 3
+    sample_indices = [s["sample_index"] for s in body["samples"]]
+    assert sample_indices == [0, 1, 2]
+
+    # Sample 0: only in run_a, so score_b should be None
+    sample_0 = body["samples"][0]
+    assert sample_0["judges"]["j1"]["score_a"] == 8.0
+    assert sample_0["judges"]["j1"]["score_b"] is None
+    assert sample_0["judges"]["j1"]["delta"] is None
+    assert sample_0["avg_score_a"] == 8.0
+    assert sample_0["avg_score_b"] is None
+    assert sample_0["avg_delta"] is None
+
+    # Sample 1: in both, delta should be 7.0 - 6.0 = 1.0
+    sample_1 = body["samples"][1]
+    assert sample_1["judges"]["j1"]["score_a"] == 6.0
+    assert sample_1["judges"]["j1"]["score_b"] == 7.0
+    assert sample_1["judges"]["j1"]["delta"] == 1.0
+    assert sample_1["avg_delta"] == 1.0
+
+    # Sample 2: only in run_b, so score_a should be None
+    sample_2 = body["samples"][2]
+    assert sample_2["judges"]["j1"]["score_a"] is None
+    assert sample_2["judges"]["j1"]["score_b"] == 9.0
+    assert sample_2["judges"]["j1"]["delta"] is None
+    assert sample_2["avg_score_a"] is None
+    assert sample_2["avg_score_b"] == 9.0
+    assert sample_2["avg_delta"] is None

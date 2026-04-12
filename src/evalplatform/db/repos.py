@@ -176,3 +176,24 @@ async def get_trace(
     if run is None:
         return None
     return run.trace_data  # type: ignore[return-value]
+
+
+async def get_results_for_runs(
+    session: AsyncSession,
+    run_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, Sequence[EvalResult]]:
+    """Return results grouped by run_id for multiple runs at once."""
+    stmt = (
+        select(EvalResult)
+        .where(EvalResult.run_id.in_(run_ids))
+        .order_by(EvalResult.run_id, EvalResult.sample_index)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+
+    # Group results by run_id
+    grouped: dict[uuid.UUID, list[EvalResult]] = {rid: [] for rid in run_ids}
+    for row in rows:
+        grouped[row.run_id].append(row)
+
+    return grouped

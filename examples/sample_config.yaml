@@ -19,3 +19,17 @@ eval:
 providers:
   gemini:
     max_concurrency: 1
+
+#eval:
+  #model: gemini/gemini-2.5-flash-lite    # Model being evaluated (Gemini)
+  #dataset: dataset.jsonl
+  #timeout_seconds: 60
+  #max_concurrency: 1
+  #judges:
+    #- type: llm
+    #  model: ollama/llama3.2              # Judge is a different LOCAL model
+    #  rubric: >
+    #    Rate from 0 to 10 how faithfully...
+    #- type: contains_keyword
+    #  keyword: python
+    #  case_sensitive: false

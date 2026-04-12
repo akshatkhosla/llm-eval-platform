@@ -11,19 +11,25 @@ from pathlib import Path
 
 from evalplatform.core.judges import (
     BaseJudge,
+    CoherenceJudge,
     ContainsKeywordJudge,
+    FaithfulnessJudge,
     LLMJudge,
     RegexMatchJudge,
+    RelevanceJudge,
 )
 from evalplatform.core.providers.factory import get_provider
 from evalplatform.core.schemas import (
     AggregateScore,
+    CoherenceJudgeConfig,
     ContainsKeywordJudgeConfig,
     EvalConfig,
     EvalRunResult,
+    FaithfulnessJudgeConfig,
     JudgeResultStatus,
     LLMJudgeConfig,
     RegexMatchJudgeConfig,
+    RelevanceJudgeConfig,
     SampleResult,
     SampleStatus,
 )
@@ -57,6 +63,18 @@ def _build_judges(config: EvalConfig) -> list[BaseJudge]:
             )
         elif isinstance(jcfg, RegexMatchJudgeConfig):
             judges.append(RegexMatchJudge(pattern=jcfg.pattern, judge_index=idx))
+        elif isinstance(jcfg, FaithfulnessJudgeConfig):
+            provider_name, model_name = jcfg.model.split("/", 1)
+            provider = get_provider(provider_name, model_name)
+            judges.append(FaithfulnessJudge(provider=provider, judge_index=idx))
+        elif isinstance(jcfg, RelevanceJudgeConfig):
+            provider_name, model_name = jcfg.model.split("/", 1)
+            provider = get_provider(provider_name, model_name)
+            judges.append(RelevanceJudge(provider=provider, judge_index=idx))
+        elif isinstance(jcfg, CoherenceJudgeConfig):
+            provider_name, model_name = jcfg.model.split("/", 1)
+            provider = get_provider(provider_name, model_name)
+            judges.append(CoherenceJudge(provider=provider, judge_index=idx))
     return judges
 
 

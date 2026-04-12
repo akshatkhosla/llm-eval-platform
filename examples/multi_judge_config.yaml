@@ -1,0 +1,37 @@
+# Multi-judge evaluation config
+#
+# Runs four judges on each sample:
+#   0 – FaithfulnessJudge  (LLM, 1-5): is the output grounded in the reference context?
+#   1 – RelevanceJudge     (LLM, 1-5): does the output address the question?
+#   2 – CoherenceJudge     (LLM, 1-5): is the output logically consistent and well-structured?
+#   3 – ContainsKeywordJudge (deterministic): does the output mention "Python"?
+#
+# Prerequisites:
+#   export GEMINI_API_KEY=<your-key>
+#   docker compose up -d   # PostgreSQL
+#   make dev               # API on :8000
+#
+# Run:
+#   curl -s -X POST http://localhost:8000/api/v1/evals \
+#     -H "Content-Type: text/yaml" \
+#     --data-binary @examples/multi_judge_config.yaml
+
+eval:
+  model: gemini/gemini-2.5-flash-lite
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 120
+  max_concurrency: 1
+  judges:
+    - type: faithfulness
+      model: gemini/gemini-2.5-flash
+    - type: relevance
+      model: gemini/gemini-2.5-flash
+    - type: coherence
+      model: gemini/gemini-2.5-flash
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 1

@@ -1,19 +1,20 @@
 """Tests for judge implementations."""
 
-from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
 
 from evalplatform.core.judges import (
+    CoherenceJudge,
     ContainsKeywordJudge,
+    FaithfulnessJudge,
     LLMJudge,
     RegexMatchJudge,
+    RelevanceJudge,
     _parse_judge_json,
 )
 from evalplatform.core.providers.base import LLMResponse
 from evalplatform.core.schemas import JudgeResultStatus
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -129,3 +130,168 @@ class TestRegexMatchJudge:
         judge = RegexMatchJudge(pattern=r"^[A-Z]", judge_index=0)
         result = await judge.judge("q", "Hello world", None)
         assert result.score == 10
+
+
+# ── FaithfulnessJudge ────────────────────────────────────────────────
+
+
+class TestFaithfulnessJudge:
+    async def test_successful_with_all_fields(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response(
+            '{"score": 4, "reasoning": "Mostly grounded", "confidence": 0.9, "specific_issues": ["minor gap"]}'
+        )
+        judge = FaithfulnessJudge(provider=provider, judge_index=0)
+        result = await judge.judge("What is X?", "X is great", "X is a thing")
+        assert result.score == 4
+        assert result.judge_type == "faithfulness"
+        assert result.reasoning == "Mostly grounded"
+        assert result.confidence == pytest.approx(0.9)
+        assert result.specific_issues == ["minor gap"]
+        assert result.status == JudgeResultStatus.ok
+        assert result.parse_failed is False
+
+    async def test_missing_optional_fields(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response('{"score": 5, "reasoning": "Perfect"}')
+        judge = FaithfulnessJudge(provider=provider, judge_index=1)
+        result = await judge.judge("q", "a", "context")
+        assert result.score == 5
+        assert result.confidence is None
+        assert result.specific_issues == []
+
+    async def test_retry_on_bad_json_then_parse_failed(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = [
+            _make_llm_response("not valid json at all"),
+            _make_llm_response("still not json"),
+        ]
+        judge = FaithfulnessJudge(provider=provider, judge_index=0)
+        result = await judge.judge("q", "a", "ctx")
+        assert result.parse_failed is True
+        assert result.score == 3  # _DEFAULT_SCORE
+        assert provider.generate.call_count == 2
+
+    async def test_retry_succeeds_on_second_attempt(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = [
+            _make_llm_response("bad"),
+            _make_llm_response(
+                '{"score": 3, "reasoning": "retry ok", "confidence": 0.6, "specific_issues": []}'
+            ),
+        ]
+        judge = FaithfulnessJudge(provider=provider, judge_index=0)
+        result = await judge.judge("q", "a", "ctx")
+        assert result.score == 3
+        assert result.parse_failed is False
+        assert provider.generate.call_count == 2
+
+    async def test_deterministic_fallback_both_llm_calls_fail(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = ConnectionError("offline")
+        judge = FaithfulnessJudge(provider=provider, judge_index=0)
+        result = await judge.judge("q", "a", None)
+        assert result.status == JudgeResultStatus.error
+        assert result.score == 3  # _DEFAULT_SCORE
+        assert result.error is not None
+
+    async def test_without_expected_context(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response(
+            '{"score": 2, "reasoning": "no context provided", "confidence": 0.5, "specific_issues": ["no reference"]}'
+        )
+        judge = FaithfulnessJudge(provider=provider, judge_index=2)
+        result = await judge.judge("q", "a", None)
+        assert result.score == 2
+        assert result.judge_index == 2
+
+
+# ── RelevanceJudge ────────────────────────────────────────────────────
+
+
+class TestRelevanceJudge:
+    async def test_successful_judge(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response(
+            '{"score": 5, "reasoning": "Directly answers", "confidence": 0.95}'
+        )
+        judge = RelevanceJudge(provider=provider, judge_index=1)
+        result = await judge.judge("What is Python?", "Python is a language.", "Python is...")
+        assert result.score == 5
+        assert result.judge_type == "relevance"
+        assert result.confidence == pytest.approx(0.95)
+        assert result.status == JudgeResultStatus.ok
+
+    async def test_parse_failed_fallback(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = [
+            _make_llm_response("garbage"),
+            _make_llm_response("more garbage"),
+        ]
+        judge = RelevanceJudge(provider=provider, judge_index=1)
+        result = await judge.judge("q", "a", None)
+        assert result.parse_failed is True
+        assert result.score == 3
+
+    async def test_deterministic_fallback(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = RuntimeError("timeout")
+        judge = RelevanceJudge(provider=provider, judge_index=1)
+        result = await judge.judge("q", "a", None)
+        assert result.status == JudgeResultStatus.error
+        assert result.score == 3
+
+    async def test_judge_index_exposed(self) -> None:
+        provider = AsyncMock()
+        judge = RelevanceJudge(provider=provider, judge_index=7)
+        assert judge.judge_index == 7
+
+
+# ── CoherenceJudge ────────────────────────────────────────────────────
+
+
+class TestCoherenceJudge:
+    async def test_successful_judge(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response(
+            '{"score": 4, "reasoning": "Well structured", "confidence": 0.8}'
+        )
+        judge = CoherenceJudge(provider=provider, judge_index=2)
+        result = await judge.judge("Explain recursion", "Recursion is...", None)
+        assert result.score == 4
+        assert result.judge_type == "coherence"
+        assert result.confidence == pytest.approx(0.8)
+        assert result.status == JudgeResultStatus.ok
+
+    async def test_json_embedded_in_prose(self) -> None:
+        provider = AsyncMock()
+        provider.generate.return_value = _make_llm_response(
+            'Sure! Here is my evaluation: {"score": 3, "reasoning": "ok", "confidence": 0.7} Hope that helps.'
+        )
+        judge = CoherenceJudge(provider=provider, judge_index=0)
+        result = await judge.judge("q", "a", None)
+        assert result.score == 3
+
+    async def test_parse_failed_fallback(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = [
+            _make_llm_response("not json"),
+            _make_llm_response("still not json"),
+        ]
+        judge = CoherenceJudge(provider=provider, judge_index=2)
+        result = await judge.judge("q", "a", None)
+        assert result.parse_failed is True
+        assert result.score == 3
+
+    async def test_deterministic_fallback(self) -> None:
+        provider = AsyncMock()
+        provider.generate.side_effect = OSError("connection refused")
+        judge = CoherenceJudge(provider=provider, judge_index=2)
+        result = await judge.judge("q", "a", None)
+        assert result.status == JudgeResultStatus.error
+        assert result.score == 3
+
+    async def test_judge_index_exposed(self) -> None:
+        provider = AsyncMock()
+        judge = CoherenceJudge(provider=provider, judge_index=5)
+        assert judge.judge_index == 5

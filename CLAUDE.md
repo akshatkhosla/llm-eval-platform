@@ -41,10 +41,6 @@ tests/          # Mirrors src/evalplatform/ layout
 - `ruff` for linting and formatting (config in `pyproject.toml`)
 - Run `make lint` before committing
 
-### Git
-- Commit messages: imperative mood, under 72 chars
-- Example: `Add health endpoint`, `Fix async session leak`
-
 ## Code Graph
 
 Maintain a persistent code graph in `.claude/code_graph.md` to avoid re-reading the codebase on every task.
@@ -59,6 +55,14 @@ Maintain a persistent code graph in `.claude/code_graph.md` to avoid re-reading 
     exports: app (FastAPI)
     key symbols: create_app(), lifespan()
   ```
+
+## Project Overview
+
+Maintain a human-readable project overview in `PROJECT_OVERVIEW.md`.
+
+- **Keep it current**: After any session where files are created, deleted, or significantly changed, update `PROJECT_OVERVIEW.md` before ending the session. This includes changes to architecture, new endpoints, new modules, new dependencies, or new design patterns.
+- **What to update**: File structure diagram, architecture diagrams, component breakdowns, and the technologies table — anything that no longer reflects the actual codebase.
+- **Do not rewrite from scratch**: Make targeted edits to the affected sections only.
 
 ## Environment
 

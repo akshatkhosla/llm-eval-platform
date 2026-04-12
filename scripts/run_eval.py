@@ -9,7 +9,11 @@ from pathlib import Path
 
 
 def _load_dotenv(env_file: Path) -> None:
-    """Minimal .env loader — sets missing env vars from KEY=VALUE lines."""
+    """
+    Load environment variables from a .env file before importing modules that need them.
+    Only sets variables that aren't already in os.environ (won't override existing).
+    Skips empty lines and comments (lines starting with #).
+    """
     if not env_file.exists():
         return
     for line in env_file.read_text().splitlines():
@@ -48,10 +52,12 @@ _JUDGE_LABELS: dict[str, str] = {
 
 
 def _truncate(text: str, width: int = 60) -> str:
+    """Shorten text to fit table columns. Adds … if truncated to indicate overflow."""
     return textwrap.shorten(text, width=width, placeholder="…")
 
 
 def _status_style(status: SampleStatus) -> str:
+    """Map sample evaluation status to Rich color: green (pass), yellow (partial), red (error)."""
     return {
         SampleStatus.passed: "green",
         SampleStatus.partial: "yellow",
@@ -60,6 +66,10 @@ def _status_style(status: SampleStatus) -> str:
 
 
 def _score_style(score: int | None) -> str:
+    """
+    Color code judge scores: dim (no score), green (≥8), yellow (5-7), red (<5).
+    Helps visually identify strong vs weak judge assessments.
+    """
     if score is None:
         return "dim"
     if score >= 8:
@@ -70,6 +80,10 @@ def _score_style(score: int | None) -> str:
 
 
 def _build_results_table(result: EvalRunResult, judge_labels: list[str]) -> Table:
+    """
+    Build a detailed results table showing each sample: prompt, response, status, and judge scores.
+    Each judge gets a column showing score/10, reasoning, or error details if evaluation failed.
+    """
     table = Table(
         title="Sample Results",
         show_lines=True,
@@ -118,6 +132,10 @@ def _build_results_table(result: EvalRunResult, judge_labels: list[str]) -> Tabl
 
 
 def _build_aggregates_table(result: EvalRunResult, judge_labels: list[str]) -> Table:
+    """
+    Build summary statistics per judge: mean, min, max scores, count of evaluations,
+    and pass rate (% of samples scored ≥7). Useful for comparing judge severity/agreement.
+    """
     table = Table(
         title="Aggregate Scores per Judge",
         header_style="bold cyan",
@@ -162,19 +180,27 @@ def _build_aggregates_table(result: EvalRunResult, judge_labels: list[str]) -> T
 
 
 def _build_summary_panel(result: EvalRunResult) -> Panel:
+    """
+    Build a high-level summary panel showing total rows, completed, errors, partial passes, and full passes.
+    Provides at-a-glance overview of eval run health.
+    """
     lines = [
         f"[bold]Total rows:[/bold]     {result.total_rows}",
         f"[bold]Completed:[/bold]      {result.completed_rows}",
         f"[bold]Errors:[/bold]         {result.error_rows}",
-        f"[bold]Partial:[/bold]        "
+        "[bold]Partial:[/bold]        "
         + str(sum(1 for s in result.sample_results if s.status == SampleStatus.partial)),
-        f"[bold]Passed:[/bold]         "
+        "[bold]Passed:[/bold]         "
         + str(sum(1 for s in result.sample_results if s.status == SampleStatus.passed)),
     ]
     return Panel("\n".join(lines), title="Run Summary", border_style="cyan", expand=False)
 
 
 async def _run(config_path: Path) -> None:
+    """
+    Core orchestration: load config, resolve paths, run eval with progress tracking,
+    and display results in formatted tables. Entry point for the async eval pipeline.
+    """
     config = load_config(config_path)
 
     # Resolve dataset path relative to the config file's directory
@@ -190,15 +216,17 @@ async def _run(config_path: Path) -> None:
         judge_labels.append(_JUDGE_LABELS.get(raw_type, raw_type))
 
     console.print()
-    console.print(Panel(
-        f"[bold]Model:[/bold]    {config.model}\n"
-        f"[bold]Dataset:[/bold]  {config.dataset}\n"
-        f"[bold]Judges:[/bold]   {', '.join(judge_labels)}\n"
-        f"[bold]Concurrency:[/bold] {config.max_concurrency}",
-        title="Eval Config",
-        border_style="blue",
-        expand=False,
-    ))
+    console.print(
+        Panel(
+            f"[bold]Model:[/bold]    {config.model}\n"
+            f"[bold]Dataset:[/bold]  {config.dataset}\n"
+            f"[bold]Judges:[/bold]   {', '.join(judge_labels)}\n"
+            f"[bold]Concurrency:[/bold] {config.max_concurrency}",
+            title="Eval Config",
+            border_style="blue",
+            expand=False,
+        )
+    )
     console.print()
 
     progress = Progress(
@@ -241,7 +269,10 @@ def main(
         dir_okay=False,
     ),
 ) -> None:
-    """Load an eval config and run it, printing results with Rich tables."""
+    """
+    CLI entry point (Typer). Accepts a path to eval YAML config file.
+    Runs the async evaluation pipeline and displays formatted results.
+    """
     asyncio.run(_run(config))
 
 

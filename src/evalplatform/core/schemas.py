@@ -27,8 +27,28 @@ class RegexMatchJudgeConfig(BaseModel):
     pattern: str
 
 
+class FaithfulnessJudgeConfig(BaseModel):
+    type: Literal["faithfulness"] = "faithfulness"
+    model: str  # "provider/model-name"
+
+
+class RelevanceJudgeConfig(BaseModel):
+    type: Literal["relevance"] = "relevance"
+    model: str  # "provider/model-name"
+
+
+class CoherenceJudgeConfig(BaseModel):
+    type: Literal["coherence"] = "coherence"
+    model: str  # "provider/model-name"
+
+
 JudgeConfig = Annotated[
-    LLMJudgeConfig | ContainsKeywordJudgeConfig | RegexMatchJudgeConfig,
+    LLMJudgeConfig
+    | ContainsKeywordJudgeConfig
+    | RegexMatchJudgeConfig
+    | FaithfulnessJudgeConfig
+    | RelevanceJudgeConfig
+    | CoherenceJudgeConfig,
     Field(discriminator="type"),
 ]
 
@@ -68,6 +88,9 @@ class JudgeResult(BaseModel):
     reasoning: str = ""
     status: JudgeResultStatus = JudgeResultStatus.ok
     error: str | None = None
+    confidence: float | None = None
+    specific_issues: list[str] = Field(default_factory=list)
+    parse_failed: bool = False
 
 
 class SampleStatus(StrEnum):

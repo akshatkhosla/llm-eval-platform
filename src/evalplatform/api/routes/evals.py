@@ -68,6 +68,39 @@ class RerunResponse(BaseModel):
     parent_run_id: uuid.UUID
 
 
+class JudgeScorePair(BaseModel):
+    score_a: float | None  # score from run A
+    score_b: float | None  # score from run B
+    delta: float | None  # score_b - score_a
+
+
+class SampleComparison(BaseModel):
+    sample_index: int
+    input_text: str
+    judges: dict[str, JudgeScorePair]  # keyed by judge name
+    avg_score_a: float | None
+    avg_score_b: float | None
+    avg_delta: float | None  # avg_score_b - avg_score_a
+    flagged: bool  # True = large score change
+
+
+class JudgeSummary(BaseModel):
+    judge_key: str
+    mean_a: float | None
+    mean_b: float | None
+    delta: float | None  # mean_b - mean_a
+
+
+class CompareResponse(BaseModel):
+    run_id_a: uuid.UUID
+    run_id_b: uuid.UUID
+    run_a: EvalRunSummary
+    run_b: EvalRunSummary
+    judge_summaries: list[JudgeSummary]
+    samples: list[SampleComparison]
+    flagged_samples: list[SampleComparison]
+
+
 # ── Helpers ────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/api/v1/evals", tags=["evals"])
@@ -186,6 +219,162 @@ async def list_evals(
     """List eval runs with optional status filter and pagination."""
     runs = await repos.list_runs(session, status=status, limit=limit, offset=offset)
     return [_to_summary(r) for r in runs]
+
+
+@router.get("/compare", response_model=CompareResponse)
+async def compare_evals(
+    run_ids: str = Query(..., description="Two run UUIDs, comma-separated"),
+    flagged_limit: int = Query(default=10, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> CompareResponse:
+    """Compare two eval runs side by side.
+
+    Returns per-evaluator scores, deltas, and flagged samples with big score changes.
+    """
+    # Parse two UUIDs from run_ids param
+    parts = [p.strip() for p in run_ids.split(",")]
+    if len(parts) != 2:
+        raise HTTPException(
+            status_code=422,
+            detail="run_ids must be exactly two comma-separated UUIDs",
+        )
+    try:
+        id_a, id_b = uuid.UUID(parts[0]), uuid.UUID(parts[1])
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail="run_ids contains an invalid UUID") from err
+
+    # Fetch both runs
+    run_a = await repos.get_run(session, id_a)
+    if run_a is None:
+        raise HTTPException(status_code=404, detail=f"Run {id_a} not found")
+    run_b = await repos.get_run(session, id_b)
+    if run_b is None:
+        raise HTTPException(status_code=404, detail=f"Run {id_b} not found")
+
+    # Fetch results for both runs
+    results_map = await repos.get_results_for_runs(session, [id_a, id_b])
+    results_a = results_map.get(id_a, [])
+    results_b = results_map.get(id_b, [])
+
+    # Index results by sample_index
+    by_index_a = {r.sample_index: r for r in results_a}  # type: ignore[attr-defined]
+    by_index_b = {r.sample_index: r for r in results_b}  # type: ignore[attr-defined]
+
+    # Get all unique sample indices
+    all_indices = sorted(set(by_index_a.keys()) | set(by_index_b.keys()))
+
+    # Build per-judge summaries (aggregate across samples)
+    judge_scores_a: dict[str, list[float]] = {}
+    judge_scores_b: dict[str, list[float]] = {}
+
+    samples_list: list[SampleComparison] = []
+
+    for idx in all_indices:
+        result_a = by_index_a.get(idx)
+        result_b = by_index_b.get(idx)
+
+        # Build judges dict for this sample
+        judges_dict: dict[str, JudgeScorePair] = {}
+
+        # Extract judge scores from result_a
+        if result_a:
+            for judge_key, judge_data in result_a.judge_scores.items():  # type: ignore[attr-defined]
+                score_a = None
+                if isinstance(judge_data, dict):
+                    raw_score = judge_data.get("score")
+                    score_a = float(raw_score) if isinstance(raw_score, (int, float)) else None
+                judges_dict.setdefault(
+                    judge_key, JudgeScorePair(score_a=None, score_b=None, delta=None)
+                )
+                judges_dict[judge_key].score_a = score_a  # type: ignore[attr-defined]
+
+        # Extract judge scores from result_b
+        if result_b:
+            for judge_key, judge_data in result_b.judge_scores.items():  # type: ignore[attr-defined]
+                score_b = None
+                if isinstance(judge_data, dict):
+                    raw_score = judge_data.get("score")
+                    score_b = float(raw_score) if isinstance(raw_score, (int, float)) else None
+                judges_dict.setdefault(
+                    judge_key, JudgeScorePair(score_a=None, score_b=None, delta=None)
+                )
+                judges_dict[judge_key].score_b = score_b  # type: ignore[attr-defined]
+
+        # Compute deltas for each judge and aggregate per-judge stats
+        for judge_key, pair in judges_dict.items():
+            if pair.score_a is not None and pair.score_b is not None:
+                pair.delta = pair.score_b - pair.score_a  # type: ignore[attr-defined]
+            judge_scores_a.setdefault(judge_key, [])
+            judge_scores_b.setdefault(judge_key, [])
+            if pair.score_a is not None:
+                judge_scores_a[judge_key].append(pair.score_a)
+            if pair.score_b is not None:
+                judge_scores_b[judge_key].append(pair.score_b)
+
+        # Compute average scores for this sample
+        scores_a = [p.score_a for p in judges_dict.values() if p.score_a is not None]
+        scores_b = [p.score_b for p in judges_dict.values() if p.score_b is not None]
+        avg_score_a = sum(scores_a) / len(scores_a) if scores_a else None
+        avg_score_b = sum(scores_b) / len(scores_b) if scores_b else None
+        avg_delta: float | None = None
+        if avg_score_a is not None and avg_score_b is not None:
+            avg_delta = avg_score_b - avg_score_a
+
+        # Use input_text from whichever result has it
+        input_text = ""
+        if result_a:
+            input_text = result_a.input_text  # type: ignore[attr-defined]
+        elif result_b:
+            input_text = result_b.input_text  # type: ignore[attr-defined]
+
+        sample = SampleComparison(
+            sample_index=idx,
+            input_text=input_text,
+            judges=judges_dict,
+            avg_score_a=avg_score_a,
+            avg_score_b=avg_score_b,
+            avg_delta=avg_delta,
+            flagged=False,  # Will update below
+        )
+        samples_list.append(sample)
+
+    # Flag top samples by absolute delta
+    samples_with_delta = [s for s in samples_list if s.avg_delta is not None]
+    samples_with_delta.sort(key=lambda s: abs(s.avg_delta or 0), reverse=True)
+    flagged_set = {s.sample_index for s in samples_with_delta[:flagged_limit]}
+
+    # Update flagged status
+    for sample in samples_list:
+        if sample.sample_index in flagged_set:
+            sample.flagged = True
+
+    # Build flagged_samples list (top N)
+    flagged_samples = [s for s in samples_list if s.flagged]
+
+    # Build judge summaries
+    judge_summary_list: list[JudgeSummary] = []
+    all_judges = set(judge_scores_a.keys()) | set(judge_scores_b.keys())
+    for judge_key in sorted(all_judges):
+        scores_a = judge_scores_a.get(judge_key, [])
+        scores_b = judge_scores_b.get(judge_key, [])
+        mean_a = sum(scores_a) / len(scores_a) if scores_a else None
+        mean_b = sum(scores_b) / len(scores_b) if scores_b else None
+        delta: float | None = None
+        if mean_a is not None and mean_b is not None:
+            delta = mean_b - mean_a
+        judge_summary_list.append(
+            JudgeSummary(judge_key=judge_key, mean_a=mean_a, mean_b=mean_b, delta=delta)
+        )
+
+    return CompareResponse(
+        run_id_a=id_a,
+        run_id_b=id_b,
+        run_a=_to_summary(run_a),
+        run_b=_to_summary(run_b),
+        judge_summaries=judge_summary_list,
+        samples=samples_list,
+        flagged_samples=flagged_samples,
+    )
 
 
 @router.get("/{run_id}/results", response_model=EvalResultsResponse)
