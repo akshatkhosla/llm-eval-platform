@@ -25,24 +25,30 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
+# Typer builds the CLI from decorated functions. `no_args_is_help=True`
+# means `evalplatform` with no args prints help instead of erroring.
 app = typer.Typer(
     name="evalplatform",
     help="LLM Eval Platform CLI",
     add_completion=False,
     no_args_is_help=True,
 )
+# Single Rich console reused for all pretty output (tables, panels, progress).
 console = Console()
 
 
 def _base_url() -> str:
+    # Server URL — overridable via env var so the CLI can point at staging/prod.
     return os.environ.get("EVALPLATFORM_API_URL", "http://localhost:8000")
 
 
 def _client() -> httpx.Client:
+    # 30s timeout is generous for normal reads; the poll loop uses its own cadence.
     return httpx.Client(base_url=_base_url(), timeout=30.0)
 
 
 def _api_get(path: str, **params: object) -> dict:
+    # Shared GET helper: drops None params, turns 404/5xx into friendly CLI exits.
     with _client() as client:
         resp = client.get(path, params={k: v for k, v in params.items() if v is not None})
     if resp.status_code == 404:
@@ -71,6 +77,11 @@ def _fmt_ts(ts: str | None) -> str:
 
 
 # ── run ───────────────────────────────────────────────────────────────
+# `evalplatform run cfg.yaml [--wait]`
+# Uploads a YAML eval config to the API. The server queues the run in a
+# background worker and immediately returns a run_id. With --wait, the CLI
+# polls /evals/{id} every 2 seconds and draws a progress bar until the run
+# reaches a terminal state (completed or failed), then prints results.
 
 
 @app.command()
@@ -87,6 +98,7 @@ def run(
 
     yaml_content = config.read_text()
 
+    # Send YAML as the raw request body (not JSON) — the API parses text/yaml.
     with _client() as client:
         resp = client.post(
             "/api/v1/evals",
@@ -104,7 +116,9 @@ def run(
     if not wait:
         return
 
-    # Poll with progress bar until complete or failed
+    # Poll with progress bar until complete or failed.
+    # Note: this loop has no timeout — if the server stays stuck in "running"
+    # forever, the CLI polls forever. Ctrl-C is the only way out.
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -139,6 +153,10 @@ def run(
 
 
 # ── status ────────────────────────────────────────────────────────────
+# `evalplatform status <run_id>`
+# One-shot GET of a single run's detail. Renders a bordered Rich panel with
+# name, status (color-coded), provider/model, progress counter, timestamps,
+# and — if the run is done — aggregate judge scores.
 
 
 @app.command()
@@ -182,6 +200,10 @@ def status(
 
 
 # ── results ───────────────────────────────────────────────────────────
+# `evalplatform results <run_id> [--format json|table]`
+# Fetches per-sample results for a run. `table` renders a Rich table with
+# dynamic columns — one column per judge discovered in the data. `json`
+# dumps the raw API payload for piping into jq or other tools.
 
 
 class ResultFormat(str, Enum):
@@ -190,6 +212,7 @@ class ResultFormat(str, Enum):
 
 
 def _print_results_table(run_id: str) -> None:
+    # Shared by `results` and `run --wait` so both render identical tables.
     data = _api_get(f"/api/v1/evals/{run_id}/results")
     results = data.get("results", [])
 
@@ -197,7 +220,9 @@ def _print_results_table(run_id: str) -> None:
         rprint("[yellow]No results found.[/yellow]")
         return
 
-    # Collect all judge keys present in the results
+    # Collect all judge keys present in the results so the table has one
+    # column per judge. Different samples may have different judges run,
+    # so we union them across all rows while preserving first-seen order.
     judge_keys: list[str] = []
     for r in results:
         for k in r.get("judge_scores", {}):
@@ -252,6 +277,10 @@ def results(
 
 
 # ── compare ───────────────────────────────────────────────────────────
+# `evalplatform compare <run_id_1> <run_id_2>`
+# A/B comparison of two runs. Calls /evals/compare which returns each run's
+# judge means plus a delta (B - A). Positive deltas render green, negative
+# red — so you can see at a glance which run scored higher on each judge.
 
 
 @app.command()
@@ -302,6 +331,10 @@ def compare(
 
 
 # ── list ──────────────────────────────────────────────────────────────
+# `evalplatform list [--status completed] [--limit 10]`
+# Lists recent runs in a summary table. The function is named `list_runs`
+# in Python (because `list` is a builtin) but exposed as `list` on the CLI
+# via `@app.command(name="list")`. Supports filtering by status.
 
 
 @app.command(name="list")
@@ -346,4 +379,6 @@ def list_runs(
 
 
 if __name__ == "__main__":
+    # Entry point for `python -m evalplatform.cli`. Typer also wires this
+    # up as the `evalplatform` console script via pyproject.toml.
     app()

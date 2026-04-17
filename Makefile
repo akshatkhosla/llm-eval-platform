@@ -1,9 +1,9 @@
 .PHONY: dev test lint migrate
 
 dev:
-	uvicorn src.evalplatform.api.app:app --reload --port 8000
+	.venv/bin/uvicorn src.evalplatform.api.app:app --reload --port 8000
 
-test:
+test: 
 	pytest tests/ -v
 
 lint:

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Outlet, useMatches, Link } from 'react-router-dom'
+import { Outlet, useLocation, Link } from 'react-router-dom'
 import { ChevronRight, Home } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 
@@ -26,14 +26,14 @@ export function Layout() {
     }
   }, [darkMode])
 
-  const matches = useMatches()
-  const crumbs = matches
-    .filter((m) => m.pathname !== '/')
-    .map((m) => {
-      const parts = m.pathname.split('/').filter(Boolean)
-      const segment = parts[parts.length - 1] ?? ''
-      return { label: ROUTE_LABELS[segment] ?? segment, to: m.pathname }
-    })
+  const location = useLocation()
+  const crumbs = location.pathname
+    .split('/')
+    .filter(Boolean)
+    .reduce<{ label: string; to: string }[]>((acc, segment) => {
+      const to = (acc[acc.length - 1]?.to ?? '') + '/' + segment
+      return [...acc, { label: ROUTE_LABELS[segment] ?? segment, to }]
+    }, [])
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-zinc-950">

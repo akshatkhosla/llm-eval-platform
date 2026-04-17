@@ -1,0 +1,16 @@
+eval:
+  model: ollama/llama3.2          # the model being evaluated
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 120
+  max_concurrency: 1
+  judges:
+    - type: llm
+      model: ollama/llama3.2      # judge uses the same local model
+      rubric: >
+        Rate from 0 to 10 how faithfully and accurately the response answers
+        the question. A score of 10 means the answer is completely correct,
+        precise, and directly addresses the question. A score of 0 means the
+        answer is wrong, off-topic, or contradicts established facts.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
