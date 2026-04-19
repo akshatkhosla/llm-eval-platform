@@ -18,11 +18,14 @@ from evalplatform.core.schemas import (
     SampleStatus,
 )
 
-
 # ── _load_dataset ────────────────────────────────────────────────────
 
 
 class TestLoadDataset:
+    @pytest.fixture(autouse=True)
+    def patch_dataset_root(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATASET_ROOT", str(tmp_path))
+
     def test_loads_valid_jsonl(self, tmp_path: Path) -> None:
         p = tmp_path / "data.jsonl"
         p.write_text(
@@ -118,6 +121,10 @@ def _make_llm_response(text: str) -> LLMResponse:
 
 
 class TestRunEval:
+    @pytest.fixture(autouse=True)
+    def patch_dataset_root(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATASET_ROOT", str(tmp_path))
+
     @pytest.fixture()
     def dataset_path(self, tmp_path: Path) -> Path:
         p = tmp_path / "test.jsonl"
