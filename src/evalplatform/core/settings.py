@@ -21,7 +21,11 @@ class Settings:
 
     @property
     def database_url(self) -> str:
-        return _require_env("DATABASE_URL")
+        url = _require_env("DATABASE_URL")
+        # Render provides postgresql:// or postgres:// — rewrite to asyncpg driver
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1).replace(
+            "postgres://", "postgresql+asyncpg://", 1
+        )
 
     @property
     def gemini_api_key(self) -> str:
