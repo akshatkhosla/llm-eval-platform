@@ -2,11 +2,10 @@ import asyncio
 import os
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from alembic import context
 
 from evalplatform.db.models import Base  # noqa: F401 — registers all models
 
@@ -17,6 +16,9 @@ config = context.config
 # Override sqlalchemy.url from environment so secrets stay out of alembic.ini.
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1).replace(
+        "postgres://", "postgresql+asyncpg://", 1
+    )
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
