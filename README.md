@@ -28,7 +28,8 @@
 
 ## Demo
 
-> **Demo video:** [Watch demo →](_YOUR_DEMO_URL_HERE_)
+> **Demo video:**
+https://github.com/user-attachments/assets/609643d7-5800-4bbf-a5cc-8b64fa22bd03
 >
 
 This demo runs the platform entirely on a local machine using [Ollama](https://ollama.com) — no cloud API keys required. If you just want to explore the UI without setting anything up, visit the live deployment link above.
