@@ -27,6 +27,7 @@ COPY --from=builder /install /usr/local
 COPY src/ src/
 COPY alembic.ini .
 COPY alembic/ alembic/
+COPY examples/dataset.jsonl data/dataset.jsonl
 
 EXPOSE 8000
 
