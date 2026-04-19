@@ -119,12 +119,12 @@ def _async_client() -> httpx.AsyncClient:
 
 
 async def test_health() -> None:
-    """GET /health returns 200 with status ok and version 0.1.0."""
+    """GET /health returns 200 with status ok and version 1.0.0."""
     async with _async_client() as client:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.1.0"}
+    assert response.json() == {"status": "ok", "version": "1.0.0"}
 
 
 async def test_create_eval_json() -> None:
