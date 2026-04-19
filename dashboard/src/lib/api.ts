@@ -1,6 +1,7 @@
 import type { EvalRunSummary, EvalRunDetail, EvalResultsResponse, EvalTrace, CompareResponse } from '../types'
+import { API_BASE } from '../config'
 
-const BASE = '/api/v1'
+const BASE = API_BASE
 
 export async function fetchEvals(params?: {
   status?: string | null
