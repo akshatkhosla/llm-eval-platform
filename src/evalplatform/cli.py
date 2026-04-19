@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -206,7 +206,7 @@ def status(
 # dumps the raw API payload for piping into jq or other tools.
 
 
-class ResultFormat(str, Enum):
+class ResultFormat(StrEnum):
     json = "json"
     table = "table"
 
