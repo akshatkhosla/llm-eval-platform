@@ -1,3 +1,5 @@
+# Local dev: starts only Postgres.
+# Run the API with: make dev
 services:
   postgres:
     image: postgres:16
@@ -9,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
