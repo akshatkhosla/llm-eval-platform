@@ -8,19 +8,58 @@
 
 ---
 
+## Table of Contents
+
+- [Demo](#demo)
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quickstart](#quickstart)
+- [Eval Config Reference](#eval-config-reference)
+- [Adding a New Provider](#adding-a-new-provider)
+- [API Reference](#api-reference)
+- [CLI Reference](#cli-reference)
+- [Tech Stack](#tech-stack)
+- [Live Demo](#live-demo)
+- [Development](#development)
+- [License](#license)
+
+---
+
+## Demo
+
+> **Demo video:** [Watch demo →](_YOUR_DEMO_URL_HERE_)
+>
+
+This demo runs the platform entirely on a local machine using [Ollama](https://ollama.com) — no cloud API keys required. If you just want to explore the UI without setting anything up, visit the live deployment link above.
+
+Two evaluation configs from the `examples/` directory are used to compare how two different open-source models handle the same set of Python questions:
+
+- **`compare_ollama_llama32.yaml`** — evaluates `ollama/llama3.2`
+- **`compare_ollama_mistral.yaml`** — evaluates `ollama/mistral`
+
+Both runs use **`ollama/llama3.1`** as the judge, selected because it is the strongest general-purpose model in the Ollama ecosystem and produces consistent, well-reasoned scores. Each run is scored across four dimensions: a custom accuracy rubric (0–10), Faithfulness, Relevance, and Coherence (1–5 each).
+
+The models are tested against five Python questions covering concurrency, data structures, memory management, decorators, and async primitives. The full question set is in [`examples/dataset.jsonl`](examples/dataset.jsonl).
+
+Once both runs complete, use the **Compare** feature in the dashboard to view a side-by-side breakdown of scores, per-sample responses, and judge reasoning — making it easy to see where one model outperforms the other.
+
+
+---
+
 ## Screenshots
 
 > **Dashboard — Eval List**
 >
-> ![Add dashboard screenshot here]
+> ![alt text](<Dashboard - Eval List.png>)
 
 > **Dashboard — Eval Detail (Overview tab)**
 >
-> ![Add eval detail screenshot here]
+> ![alt text](<Dashboard - Eval Details.png>)
 
 > **Dashboard — Compare runs**
 >
-> ![Add compare screenshot here]
+> ![alt text](<Compare Page.png>)
 
 ---
 
