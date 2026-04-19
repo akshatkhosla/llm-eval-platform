@@ -243,6 +243,8 @@ async def _evaluate_sample(
                     llm_span.attributes["latency_ms"] = llm_resp.latency_ms
                     llm_span.attributes["status"] = "ok"
             response_text = llm_resp.text
+            resp_tokens = llm_resp.input_tokens + llm_resp.output_tokens
+            resp_latency_ms = llm_resp.latency_ms
 
         except Exception as exc:
             # If the LLM call fails entirely, return an error SampleResult immediately.
@@ -320,6 +322,8 @@ async def _evaluate_sample(
         status=status,
         judge_results=final_judge_results,
         metadata=metadata,
+        tokens_used=resp_tokens,
+        latency_ms=resp_latency_ms,
     )
 
 

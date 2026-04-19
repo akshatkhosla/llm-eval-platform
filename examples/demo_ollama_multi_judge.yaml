@@ -1,0 +1,25 @@
+# Llama 3.2 local, scored by the same three specialized judges (Gemini-powered
+# for judging quality) + the keyword check.
+# Purpose: direct apples-to-apples scorecard against config 4.
+eval:
+  model: ollama/llama3.2
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 180
+  max_concurrency: 2
+  judges:
+    - type: faithfulness
+      model: gemini/gemini-2.5-flash
+    - type: relevance
+      model: gemini/gemini-2.5-flash
+    - type: coherence
+      model: gemini/gemini-2.5-flash
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+    max_concurrency: 2
+  gemini:
+    max_concurrency: 3

@@ -6,9 +6,9 @@ import {
   flexRender,
   createColumnHelper,
 } from '@tanstack/react-table'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Search, RefreshCw, ChevronDown, BarChart2, AlertTriangle } from 'lucide-react'
-import { fetchEvals } from '../lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Search, RefreshCw, ChevronDown, BarChart2, AlertTriangle, ChevronRight, Trash2, ChevronLeft } from 'lucide-react'
+import { fetchEvals, deleteEval } from '../lib/api'
 import type { EvalRunSummary } from '../types'
 import { StatusBadge } from '../components/StatusBadge'
 import { TableRowSkeleton } from '../components/Skeleton'
@@ -20,9 +20,11 @@ import { cn, relativeTime, formatDuration, formatTokens } from '../lib/utils'
 function SamplesProgress({
   completed,
   total,
+  allErrored = false,
 }: {
   completed: number
   total: number | null
+  allErrored?: boolean
 }) {
   if (total === null || total === 0)
     return <span className="text-sm text-zinc-400 dark:text-zinc-500">—</span>
@@ -34,12 +36,15 @@ function SamplesProgress({
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',
-            isComplete ? 'bg-emerald-500' : 'bg-blue-500',
+            allErrored ? 'bg-red-500' : isComplete ? 'bg-emerald-500' : 'bg-blue-500',
           )}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums whitespace-nowrap">
+      <span className={cn(
+        'text-xs tabular-nums whitespace-nowrap',
+        allErrored ? 'text-red-500 dark:text-red-400' : 'text-zinc-500 dark:text-zinc-400',
+      )}>
         {completed}/{total}
       </span>
     </div>
@@ -48,22 +53,47 @@ function SamplesProgress({
 
 function ScoreCell({ score }: { score: number | null }) {
   if (score === null)
-    return (
-      <span
-        className="text-sm text-zinc-300 dark:text-zinc-600"
-        title="Available in run detail"
-      >
-        —
-      </span>
-    )
-  const color =
+    return <span className="text-sm text-zinc-300 dark:text-zinc-600">—</span>
+
+  const barColor =
+    score >= 7 ? 'bg-emerald-500' : score >= 4 ? 'bg-amber-500' : 'bg-red-500'
+  const textColor =
     score >= 7
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-emerald-700 dark:text-emerald-400'
       : score >= 4
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-red-600 dark:text-red-400'
+        ? 'text-amber-700 dark:text-amber-400'
+        : 'text-red-700 dark:text-red-400'
+  const pct = Math.min(100, (score / 10) * 100)
+
   return (
-    <span className={cn('text-sm font-medium tabular-nums', color)}>{score.toFixed(1)}</span>
+    <div className="flex items-center gap-2">
+      <div className="w-14 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden flex-shrink-0">
+        <div className={cn('h-full rounded-full', barColor)} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={cn('text-sm font-semibold tabular-nums', textColor)}>
+        {score.toFixed(1)}
+      </span>
+    </div>
+  )
+}
+
+function ProviderChip({ provider }: { provider: string }) {
+  const styles: Record<string, string> = {
+    gemini: 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20',
+    ollama: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+  }
+  const cls =
+    styles[provider.toLowerCase()] ??
+    'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium capitalize border',
+        cls,
+      )}
+    >
+      {provider}
+    </span>
   )
 }
 
@@ -80,22 +110,43 @@ const COLUMNS = [
       </span>
     ),
   }),
-  col.accessor('status', {
+  col.display({
+    id: 'status',
     header: 'Status',
-    cell: (info) => <StatusBadge status={info.getValue()} />,
+    cell: ({ row }) => {
+      const { status, passed_samples, failed_samples } = row.original
+      if (status === 'completed' && (passed_samples > 0 || failed_samples > 0)) {
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {passed_samples > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                {passed_samples} passed
+              </span>
+            )}
+            {failed_samples > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                {failed_samples} failed
+              </span>
+            )}
+          </div>
+        )
+      }
+      return <StatusBadge status={status} />
+    },
   }),
   col.accessor('provider', {
     header: 'Provider',
-    cell: (info) => (
-      <span className="text-sm text-zinc-700 dark:text-zinc-300 capitalize">
-        {info.getValue()}
-      </span>
-    ),
+    cell: (info) => <ProviderChip provider={info.getValue()} />,
   }),
   col.accessor('model', {
     header: 'Model',
     cell: (info) => (
-      <span className="text-sm font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[160px] block">
+      <span
+        className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[160px] block"
+        title={info.getValue()}
+      >
         {info.getValue()}
       </span>
     ),
@@ -103,17 +154,32 @@ const COLUMNS = [
   col.display({
     id: 'samples',
     header: 'Samples',
-    cell: ({ row }) => (
-      <SamplesProgress
-        completed={row.original.completed_samples}
-        total={row.original.total_samples}
-      />
-    ),
+    cell: ({ row }) => {
+      const { completed_samples, total_samples, total_tokens, status } = row.original
+      // "All errored" = run finished but no LLM call ever succeeded (tokens = 0).
+      // Empty aggregate_scores alone isn't enough — it can also mean judges
+      // failed while samples themselves succeeded.
+      const allErrored =
+        status === 'completed' && total_tokens === 0 && completed_samples > 0
+      return (
+        <SamplesProgress
+          completed={completed_samples}
+          total={total_samples}
+          allErrored={allErrored}
+        />
+      )
+    },
   }),
   col.display({
     id: 'avg_score',
     header: 'Avg Score',
-    cell: () => <ScoreCell score={null} />,
+    cell: ({ row }) => {
+      const scores = row.original.aggregate_scores
+      if (!scores) return <ScoreCell score={null} />
+      const means = Object.values(scores).map((s) => s.mean)
+      const avg = means.length > 0 ? means.reduce((a, b) => a + b, 0) / means.length : null
+      return <ScoreCell score={avg} />
+    },
   }),
   col.accessor('total_tokens', {
     header: 'Tokens',
@@ -123,13 +189,22 @@ const COLUMNS = [
       </span>
     ),
   }),
-  col.accessor('total_latency_ms', {
+  col.display({
+    id: 'duration',
     header: 'Duration',
-    cell: (info) => (
-      <span className="text-sm text-zinc-500 dark:text-zinc-400 tabular-nums">
-        {formatDuration(info.getValue())}
-      </span>
-    ),
+    cell: ({ row }) => {
+      const { total_latency_ms, started_at, completed_at } = row.original
+      const ms = total_latency_ms > 0
+        ? total_latency_ms
+        : started_at && completed_at
+          ? new Date(completed_at).getTime() - new Date(started_at).getTime()
+          : 0
+      return (
+        <span className="text-sm text-zinc-500 dark:text-zinc-400 tabular-nums">
+          {formatDuration(ms)}
+        </span>
+      )
+    },
   }),
   col.accessor('created_at', {
     header: 'Created',
@@ -153,6 +228,9 @@ const STATUSES: Array<{ value: string | null; label: string }> = [
   { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' },
 ]
+
+const PAGE_SIZES = [5, 10, 50, 100] as const
+type PageSize = (typeof PAGE_SIZES)[number]
 
 // ── Empty / Error states ─────────────────────────────────────────────────────
 
@@ -209,7 +287,16 @@ export function EvalsListPage() {
   const [nameFilter, setNameFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [pageSize, setPageSize] = useState<PageSize>(10)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageSizeOpen, setPageSizeOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const pageSizeRef = useRef<HTMLDivElement>(null)
+
+  // Reset to first page whenever the filter or page size changes
+  useEffect(() => {
+    setPageIndex(0)
+  }, [statusFilter, pageSize])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -223,27 +310,94 @@ export function EvalsListPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [dropdownOpen])
 
+  useEffect(() => {
+    if (!pageSizeOpen) return
+    const handler = (e: MouseEvent) => {
+      if (pageSizeRef.current && !pageSizeRef.current.contains(e.target as Node)) {
+        setPageSizeOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [pageSizeOpen])
+
+  const queryClient = useQueryClient()
+  const deleteMutation = useMutation({
+    mutationFn: deleteEval,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['evals'] }),
+  })
+
+  const columns = useMemo(
+    () => [
+      ...COLUMNS,
+      col.display({
+        id: 'action',
+        header: '',
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (window.confirm(`Delete "${row.original.name}"? This cannot be undone.`)) {
+                  deleteMutation.mutate(row.original.run_id)
+                }
+              }}
+              className="p-1 rounded opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+              title="Delete run"
+            >
+              <Trash2 size={13} />
+            </button>
+            <ChevronRight
+              size={14}
+              className="text-zinc-300 dark:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+          </div>
+        ),
+      }),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deleteMutation.mutate],
+  )
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['evals', statusFilter],
-    queryFn: () => fetchEvals({ status: statusFilter }),
+    queryKey: ['evals', statusFilter, pageIndex, pageSize],
+    queryFn: () =>
+      fetchEvals({
+        status: statusFilter,
+        // Fetch one extra row so we can detect whether a next page exists
+        // without needing a separate count endpoint.
+        limit: pageSize + 1,
+        offset: pageIndex * pageSize,
+      }),
     refetchInterval: 5_000,
   })
 
-  // Client-side name filter
+  const hasNextPage = (data?.length ?? 0) > pageSize
+  const pageRows = useMemo(() => (data ?? []).slice(0, pageSize), [data, pageSize])
+
+  // Client-side name filter (applied within the current page only)
   const filtered = useMemo(() => {
-    if (!data) return []
     const q = nameFilter.trim().toLowerCase()
-    return q ? data.filter((r) => r.name.toLowerCase().includes(q)) : data
-  }, [data, nameFilter])
+    return q ? pageRows.filter((r) => r.name.toLowerCase().includes(q)) : pageRows
+  }, [pageRows, nameFilter])
 
   const table = useReactTable({
     data: filtered,
-    columns: COLUMNS,
+    columns,
     getCoreRowModel: getCoreRowModel(),
   })
 
   const hasFilters = !!nameFilter.trim() || statusFilter !== null
   const currentStatusLabel = STATUSES.find((s) => s.value === statusFilter)?.label ?? 'All statuses'
+
+  const statusCounts = useMemo(() => {
+    if (pageRows.length === 0) return null
+    return {
+      completed: pageRows.filter((r) => r.status === 'completed').length,
+      running: pageRows.filter((r) => r.status === 'running').length,
+      failed: pageRows.filter((r) => r.status === 'failed').length,
+    }
+  }, [pageRows])
 
   return (
     <div className="flex flex-col h-full">
@@ -251,13 +405,30 @@ export function EvalsListPage() {
       <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Eval Runs</h1>
-          <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-0.5 h-5">
-            {!isLoading && data != null && (
+          <div className="flex items-center gap-3 mt-1 h-5">
+            {!isLoading && data != null && statusCounts && (
               <>
-                {data.length} run{data.length !== 1 ? 's' : ''} total
+                <span className="text-sm text-zinc-400 dark:text-zinc-500">
+                  {pageRows.length} run{pageRows.length !== 1 ? 's' : ''} on this page
+                </span>
+                {statusCounts.completed > 0 && (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    {statusCounts.completed} completed
+                  </span>
+                )}
+                {statusCounts.running > 0 && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                    {statusCounts.running} running
+                  </span>
+                )}
+                {statusCounts.failed > 0 && (
+                  <span className="text-xs text-red-500 dark:text-red-400 font-medium">
+                    {statusCounts.failed} failed
+                  </span>
+                )}
               </>
             )}
-          </p>
+          </div>
         </div>
         <button
           onClick={() => setModalOpen(true)}
@@ -371,7 +542,7 @@ export function EvalsListPage() {
                   <tr
                     key={row.id}
                     onClick={() => void navigate(`/evals/${row.original.run_id}`)}
-                    className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60 cursor-pointer transition-colors"
+                    className="group hover:bg-zinc-50 dark:hover:bg-zinc-900/60 cursor-pointer transition-colors"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className="px-4 py-3.5">
@@ -386,18 +557,79 @@ export function EvalsListPage() {
         </div>
       )}
 
-      {/* Footer */}
-      {!isLoading && !isError && filtered.length > 0 && (
-        <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40">
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">
-            Showing{' '}
-            <span className="text-zinc-600 dark:text-zinc-300 font-medium">{filtered.length}</span>
-            {data && filtered.length !== data.length && (
-              <> of <span className="text-zinc-600 dark:text-zinc-300 font-medium">{data.length}</span></>
-            )}{' '}
-            run{filtered.length !== 1 ? 's' : ''}
-          </span>
-          <span className="text-xs text-zinc-300 dark:text-zinc-700">Auto-refreshes every 5s</span>
+      {/* Footer / pagination */}
+      {!isError && (
+        <div className="flex items-center justify-between gap-4 px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40">
+          {/* Page-size selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">Rows per page</span>
+            <div className="relative" ref={pageSizeRef}>
+              <button
+                onClick={() => setPageSizeOpen((o) => !o)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-md text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all outline-none focus:ring-2 focus:ring-blue-500/40 tabular-nums"
+              >
+                {pageSize}
+                <ChevronDown
+                  size={11}
+                  className={cn(
+                    'text-zinc-400 transition-transform duration-150',
+                    pageSizeOpen && 'rotate-180',
+                  )}
+                />
+              </button>
+              {pageSizeOpen && (
+                <div className="absolute left-0 bottom-full mb-1.5 w-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg shadow-black/10 dark:shadow-black/40 overflow-hidden z-20">
+                  {PAGE_SIZES.map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => {
+                        setPageSize(n)
+                        setPageSizeOpen(false)
+                      }}
+                      className={cn(
+                        'w-full text-left px-3 py-1.5 text-xs tabular-nums transition-colors',
+                        n === pageSize
+                          ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Range + prev/next */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-zinc-400 dark:text-zinc-500 tabular-nums">
+              {pageRows.length === 0
+                ? '0 results'
+                : `${pageIndex * pageSize + 1}–${pageIndex * pageSize + pageRows.length}`}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+                disabled={pageIndex === 0 || isLoading}
+                className="p-1.5 rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums px-2">
+                Page {pageIndex + 1}
+              </span>
+              <button
+                onClick={() => setPageIndex((i) => i + 1)}
+                disabled={!hasNextPage || isLoading}
+                className="p-1.5 rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                aria-label="Next page"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -55,3 +55,6 @@ alembic/versions/*.pyc
 node_modules/
 dashboard/node_modules/
 dashboard/dist/
+
+# Graphify output
+graphify-out/

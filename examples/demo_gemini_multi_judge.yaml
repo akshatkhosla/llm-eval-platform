@@ -1,0 +1,22 @@
+# Gemini flash-lite scored by the three specialized 1-5 judges
+# plus a deterministic keyword check.
+# Purpose: show faithfulness / relevance / coherence as an evaluation scorecard.
+eval:
+  model: gemini/gemini-2.5-flash-lite
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 120
+  max_concurrency: 3
+  judges:
+    - type: faithfulness
+      model: gemini/gemini-2.5-flash
+    - type: relevance
+      model: gemini/gemini-2.5-flash
+    - type: coherence
+      model: gemini/gemini-2.5-flash
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 3

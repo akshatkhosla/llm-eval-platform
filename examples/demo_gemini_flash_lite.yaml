@@ -1,0 +1,22 @@
+# Gemini flash-lite being evaluated, judged by a larger Gemini model.
+# Purpose: cheap, fast baseline. Use as the reference point for every other run.
+eval:
+  model: gemini/gemini-2.5-flash-lite
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 60
+  max_concurrency: 3
+  judges:
+    - type: llm
+      model: gemini/gemini-2.5-flash
+      rubric: >
+        Rate 0-10 how accurately the response answers the question.
+        10 = completely correct, precise, and directly on-topic.
+        5  = partially correct or missing key details.
+        0  = wrong, off-topic, or contradicts established facts.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 3

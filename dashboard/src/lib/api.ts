@@ -55,6 +55,11 @@ export async function fetchCompare(
   return res.json() as Promise<CompareResponse>
 }
 
+export async function deleteEval(runId: string): Promise<void> {
+  const res = await fetch(`${BASE}/evals/${runId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export async function createEval(
   configYaml: string,
 ): Promise<{ run_id: string; status: string }> {

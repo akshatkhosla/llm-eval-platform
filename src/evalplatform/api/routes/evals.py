@@ -35,13 +35,15 @@ class EvalRunSummary(BaseModel):
     completed_at: datetime | None
     total_samples: int | None
     completed_samples: int
+    passed_samples: int
+    failed_samples: int
     total_tokens: int
     total_latency_ms: float
+    aggregate_scores: dict[str, object] | None = None
 
 
 class EvalRunDetail(EvalRunSummary):
     error_message: str | None
-    aggregate_scores: dict[str, object] | None
     config_yaml: str | None
 
 
@@ -119,8 +121,11 @@ def _to_summary(run: object) -> EvalRunSummary:
         completed_at=run.completed_at,  # type: ignore[attr-defined]
         total_samples=run.total_samples,  # type: ignore[attr-defined]
         completed_samples=run.completed_samples,  # type: ignore[attr-defined]
+        passed_samples=run.passed_samples,  # type: ignore[attr-defined]
+        failed_samples=run.failed_samples,  # type: ignore[attr-defined]
         total_tokens=run.total_tokens,  # type: ignore[attr-defined]
         total_latency_ms=run.total_latency_ms,  # type: ignore[attr-defined]
+        aggregate_scores=run.aggregate_scores,  # type: ignore[attr-defined]
     )
 
 
@@ -136,6 +141,8 @@ def _to_detail(run: object) -> EvalRunDetail:
         completed_at=run.completed_at,  # type: ignore[attr-defined]
         total_samples=run.total_samples,  # type: ignore[attr-defined]
         completed_samples=run.completed_samples,  # type: ignore[attr-defined]
+        passed_samples=run.passed_samples,  # type: ignore[attr-defined]
+        failed_samples=run.failed_samples,  # type: ignore[attr-defined]
         total_tokens=run.total_tokens,  # type: ignore[attr-defined]
         total_latency_ms=run.total_latency_ms,  # type: ignore[attr-defined]
         error_message=run.error_message,  # type: ignore[attr-defined]
@@ -439,6 +446,17 @@ async def get_eval(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
     return _to_detail(run)
+
+
+@router.delete("/{run_id}", status_code=204)
+async def delete_eval(
+    run_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Permanently delete an eval run and all its results."""
+    deleted = await repos.delete_run(session, run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
 
 @router.get("/{run_id}/traces", response_model=EvalTrace)

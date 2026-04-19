@@ -88,6 +88,8 @@ async def update_run_progress(
     *,
     total_samples: int | None = None,
     completed_samples: int | None = None,
+    passed_samples: int | None = None,
+    failed_samples: int | None = None,
     aggregate_scores: dict[str, float] | None = None,
     total_tokens: int | None = None,
     total_latency_ms: float | None = None,
@@ -100,6 +102,10 @@ async def update_run_progress(
         run.total_samples = total_samples
     if completed_samples is not None:
         run.completed_samples = completed_samples
+    if passed_samples is not None:
+        run.passed_samples = passed_samples
+    if failed_samples is not None:
+        run.failed_samples = failed_samples
     if aggregate_scores is not None:
         run.aggregate_scores = aggregate_scores
     if total_tokens is not None:
@@ -176,6 +182,16 @@ async def get_trace(
     if run is None:
         return None
     return run.trace_data  # type: ignore[return-value]
+
+
+async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> bool:
+    """Delete an EvalRun (cascades to results). Returns True if found and deleted."""
+    run = await get_run(session, run_id)
+    if run is None:
+        return False
+    await session.delete(run)
+    await session.commit()
+    return True
 
 
 async def get_results_for_runs(

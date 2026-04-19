@@ -1,0 +1,26 @@
+# Same Gemini model as config 1, but judged by a LOCAL Ollama model.
+# Purpose: demonstrate judge bias — does a local judge rate Gemini
+# differently than Gemini rates Gemini?
+eval:
+  model: gemini/gemini-2.5-flash-lite
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 120
+  max_concurrency: 3
+  judges:
+    - type: llm
+      model: ollama/llama3.2
+      rubric: >
+        Rate 0-10 how accurately the response answers the question.
+        10 = completely correct, precise, and directly on-topic.
+        5  = partially correct or missing key details.
+        0  = wrong, off-topic, or contradicts established facts.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 3
+  ollama:
+    base_url: http://localhost:11434
+    max_concurrency: 2

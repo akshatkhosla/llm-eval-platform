@@ -1,5 +1,12 @@
 export type EvalStatus = 'pending' | 'running' | 'completed' | 'failed'
 
+export interface AggregateScore {
+  mean: number
+  min_score: number
+  max_score: number
+  count: number
+}
+
 export interface EvalRunSummary {
   run_id: string
   name: string
@@ -11,20 +18,15 @@ export interface EvalRunSummary {
   completed_at: string | null
   total_samples: number | null
   completed_samples: number
+  passed_samples: number
+  failed_samples: number
   total_tokens: number
   total_latency_ms: number
-}
-
-export interface AggregateScore {
-  mean: number
-  min_score: number
-  max_score: number
-  count: number
+  aggregate_scores: Record<string, AggregateScore> | null
 }
 
 export interface EvalRunDetail extends EvalRunSummary {
   error_message: string | null
-  aggregate_scores: Record<string, AggregateScore> | null
   config_yaml: string | null
 }
 

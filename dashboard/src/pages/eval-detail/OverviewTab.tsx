@@ -114,16 +114,23 @@ export function OverviewTab({ run }: { run: EvalRunDetail }) {
 
   const results = data?.results ?? []
 
-  // Overall average score across all judges and all results
+  // Overall average score — mirror the backend's aggregate_scores logic
+  // (only count judges with status='ok' so fallback scores from errored
+  // judges don't distort the average). This keeps the detail page in sync
+  // with the list page, which reads run.aggregate_scores directly.
   const avgScore: number | null = (() => {
-    const all: number[] = []
-    for (const r of results) {
-      for (const j of Object.values(r.judge_scores)) {
-        if (j.score !== null) all.push(j.score)
-      }
+    if (run.aggregate_scores && Object.keys(run.aggregate_scores).length > 0) {
+      const means = Object.values(run.aggregate_scores).map((s) => s.mean)
+      return means.reduce((a, b) => a + b, 0) / means.length
     }
-    return all.length > 0 ? all.reduce((a, b) => a + b, 0) / all.length : null
+    return null
   })()
+
+  const wallDurationMs =
+    run.started_at && run.completed_at
+      ? new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
+      : null
+  const effectiveDurationMs = run.total_latency_ms > 0 ? run.total_latency_ms : wallDurationMs
 
   const perSampleLatency =
     run.total_samples != null && run.total_samples > 0
@@ -190,7 +197,10 @@ export function OverviewTab({ run }: { run: EvalRunDetail }) {
           value={run.total_tokens === 0 ? '—' : formatTokens(run.total_tokens)}
         />
 
-        <StatCard label="Duration" value={formatDuration(run.total_latency_ms)} />
+        <StatCard
+          label="Duration"
+          value={effectiveDurationMs != null ? formatDuration(effectiveDurationMs) : '—'}
+        />
 
         <StatCard
           label="Avg Latency / Sample"

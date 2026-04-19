@@ -146,6 +146,8 @@ class SampleResult(BaseModel):
     error: str | None = None
     judge_results: list[JudgeResult] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
+    tokens_used: int = 0
+    latency_ms: float = 0.0
 
 
 class AggregateScore(BaseModel):

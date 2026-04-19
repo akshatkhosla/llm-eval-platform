@@ -1,0 +1,27 @@
+# Ollama model comparison — Run A: llama3.2
+# Judged entirely by llama3.1 (best general-purpose Ollama model for judging).
+# Pair with compare_ollama_mistral.yaml, then use the Compare feature in the UI.
+eval:
+  model: ollama/llama3.2
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 180
+  max_concurrency: 2
+  judges:
+    - type: llm
+      model: ollama/llama3.1
+      rubric: >
+        Rate 0-10 how accurately the response answers the question.
+        10 = completely correct, precise, and directly on-topic.
+        5  = partially correct or missing key details.
+        0  = wrong, off-topic, or contradicts established facts.
+    - type: faithfulness
+      model: ollama/llama3.1
+    - type: relevance
+      model: ollama/llama3.1
+    - type: coherence
+      model: ollama/llama3.1
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+    max_concurrency: 2

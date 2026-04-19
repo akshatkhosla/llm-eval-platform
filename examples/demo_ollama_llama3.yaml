@@ -1,0 +1,26 @@
+# Llama 3.2 running locally via Ollama. Judged by Gemini for a fair,
+# provider-independent scoring frame.
+# Purpose: cloud vs local — latency, cost, and quality story.
+eval:
+  model: ollama/llama3.2
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 120
+  max_concurrency: 2
+  judges:
+    - type: llm
+      model: gemini/gemini-2.5-flash
+      rubric: >
+        Rate 0-10 how accurately the response answers the question.
+        10 = completely correct, precise, and directly on-topic.
+        5  = partially correct or missing key details.
+        0  = wrong, off-topic, or contradicts established facts.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+    max_concurrency: 2
+  gemini:
+    max_concurrency: 3

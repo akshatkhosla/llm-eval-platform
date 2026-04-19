@@ -1,0 +1,22 @@
+# Gemini 2.5 flash (larger than flash-lite). Same dataset, same judges.
+# Purpose: isolate the effect of model size — quality vs cost/latency.
+eval:
+  model: gemini/gemini-2.5-flash
+  dataset: examples/dataset.jsonl
+  timeout_seconds: 60
+  max_concurrency: 3
+  judges:
+    - type: llm
+      model: gemini/gemini-2.5-flash
+      rubric: >
+        Rate 0-10 how accurately the response answers the question.
+        10 = completely correct, precise, and directly on-topic.
+        5  = partially correct or missing key details.
+        0  = wrong, off-topic, or contradicts established facts.
+    - type: contains_keyword
+      keyword: python
+      case_sensitive: false
+
+providers:
+  gemini:
+    max_concurrency: 3

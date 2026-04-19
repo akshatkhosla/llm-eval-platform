@@ -49,6 +49,8 @@ class EvalRun(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_samples: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    passed_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     aggregate_scores: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
