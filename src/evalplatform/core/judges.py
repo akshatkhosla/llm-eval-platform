@@ -16,12 +16,16 @@ logger = logging.getLogger(__name__)
 
 
 class BaseJudge(Protocol):
+    """Protocol that all judge implementations must satisfy."""
+
     async def judge(
         self,
         prompt: str,
         output: str,
         expected: str | None,
-    ) -> JudgeResult: ...
+    ) -> JudgeResult:
+        """Score *output* given the original *prompt* and optional *expected* answer."""
+        ...
 
 
 # ── LLM Judge ────────────────────────────────────────────────────────
@@ -63,6 +67,8 @@ def _parse_judge_json(text: str) -> dict[str, object]:
 
 
 class LLMJudge:
+    """Scores responses 0–10 using an LLM with a user-supplied rubric."""
+
     def __init__(
         self,
         provider: BaseLLMProvider,
@@ -116,6 +122,8 @@ class LLMJudge:
 
 
 class ContainsKeywordJudge:
+    """Deterministic judge: scores 10 if a keyword appears in the output, 0 otherwise."""
+
     def __init__(self, keyword: str, case_sensitive: bool, judge_index: int) -> None:
         self._keyword = keyword
         self._case_sensitive = case_sensitive
@@ -140,6 +148,8 @@ class ContainsKeywordJudge:
 
 
 class RegexMatchJudge:
+    """Deterministic judge: scores 10 if a regex pattern matches the output, 0 otherwise."""
+
     def __init__(self, pattern: str, judge_index: int) -> None:
         self._pattern = re.compile(pattern)
         self._judge_index = judge_index

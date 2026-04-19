@@ -52,7 +52,11 @@ class OllamaProvider:
         resp.raise_for_status()
         data = resp.json()
 
-        text: str = data["choices"][0]["message"]["content"]
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError(f"Ollama returned no choices for model {self._model!r}")
+        message = choices[0].get("message") or {}
+        text: str = message.get("content") or ""
         usage = data.get("usage", {})
         return LLMResponse(
             text=text,

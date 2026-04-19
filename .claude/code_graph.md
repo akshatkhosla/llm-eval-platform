@@ -1,9 +1,9 @@
 # Code Graph
 
 ## src/evalplatform/api/app.py
-  imports: routes.evals
+  imports: routes.evals, core.settings
   exports: app (FastAPI)
-  key symbols: app (FastAPI instance with /health route and evals_router)
+  key symbols: app (FastAPI v1.0.0 instance; CORS origins from settings.allowed_origins; /health route and evals_router)
 
 ## src/evalplatform/api/routes/evals.py
   imports: background.run_eval_background, core.config_loader, db.repos, db.session, tracing.trace_models.EvalTrace
@@ -35,9 +35,13 @@
     - _build_eval_config(raw) — internal builder
 
 ## src/evalplatform/core/schemas.py
-  exports: LLMJudgeConfig, ContainsKeywordJudgeConfig, RegexMatchJudgeConfig, JudgeConfig,
-           ProviderConfig, EvalConfig, JudgeResult, JudgeResultStatus, SampleResult, SampleStatus,
-           AggregateScore, EvalRunResult
+  exports: LLMJudgeConfig, ContainsKeywordJudgeConfig, RegexMatchJudgeConfig,
+           FaithfulnessJudgeConfig, RelevanceJudgeConfig, CoherenceJudgeConfig,
+           JudgeConfig, ProviderConfig, EvalConfig, JudgeResult, JudgeResultStatus,
+           SampleResult, SampleStatus, AggregateScore, EvalRunResult
+  validators:
+    - _validate_provider_model() — shared; enforces "provider/model-name" format
+    - EvalConfig.validate_model, LLMJudgeConfig.validate_model (and all LLM judge configs) — field validator
 
 ## src/evalplatform/core/runner.py
   imports: core.judges, core.providers.factory, core.schemas
@@ -51,7 +55,8 @@
 
 ## src/evalplatform/core/judges.py
   imports: core.schemas, core.providers.base
-  exports: BaseJudge, LLMJudge, ContainsKeywordJudge, RegexMatchJudge
+  exports: BaseJudge, LLMJudge, ContainsKeywordJudge, RegexMatchJudge,
+           FaithfulnessJudge, RelevanceJudge, CoherenceJudge
   key symbols: BaseJudge.judge(prompt, response, expected) -> JudgeResult
 
 ## src/evalplatform/core/providers/base.py
@@ -69,7 +74,8 @@
 
 ## src/evalplatform/core/settings.py
   exports: settings (Settings)
-  key symbols: settings.database_url, settings.gemini_api_key (read from env)
+  key symbols: settings.database_url, settings.gemini_api_key, settings.dataset_root, settings.allowed_origins
+  notes: allowed_origins reads ALLOWED_ORIGINS env var (comma-separated or "*"); defaults to ["*"]
 
 ## src/evalplatform/db/models.py
   exports: Base, EvalRun, EvalResult, RunStatus, ResultStatus

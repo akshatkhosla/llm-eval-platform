@@ -5,7 +5,20 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# ── Shared validator ──────────────────────────────────────────────────
+
+
+def _validate_provider_model(value: str) -> str:
+    """Ensure a model string is in 'provider/model-name' format."""
+    if "/" not in value:
+        raise ValueError(
+            f"model {value!r} must be in 'provider/model-name' format "
+            "(e.g. 'gemini/gemini-2.5-flash' or 'ollama/llama3')"
+        )
+    return value
+
 
 # ── Judge configs (discriminated union) ──────────────────────────────
 
@@ -14,6 +27,11 @@ class LLMJudgeConfig(BaseModel):
     type: Literal["llm"] = "llm"
     model: str  # "provider/model-name"
     rubric: str
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        return _validate_provider_model(v)
 
 
 class ContainsKeywordJudgeConfig(BaseModel):
@@ -31,15 +49,30 @@ class FaithfulnessJudgeConfig(BaseModel):
     type: Literal["faithfulness"] = "faithfulness"
     model: str  # "provider/model-name"
 
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        return _validate_provider_model(v)
+
 
 class RelevanceJudgeConfig(BaseModel):
     type: Literal["relevance"] = "relevance"
     model: str  # "provider/model-name"
 
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        return _validate_provider_model(v)
+
 
 class CoherenceJudgeConfig(BaseModel):
     type: Literal["coherence"] = "coherence"
     model: str  # "provider/model-name"
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        return _validate_provider_model(v)
 
 
 JudgeConfig = Annotated[
@@ -71,6 +104,11 @@ class EvalConfig(BaseModel):
     judges: list[JudgeConfig] = Field(min_length=1)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     max_concurrency: int = 10
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        return _validate_provider_model(v)
 
 
 # ── Result models ────────────────────────────────────────────────────
