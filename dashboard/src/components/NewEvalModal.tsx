@@ -6,7 +6,7 @@ import { cn } from '../lib/utils'
 
 const TEMPLATE = `eval:
   model: gemini/gemini-2.5-flash-lite
-  dataset: dataset.jsonl
+  dataset: data/dataset.jsonl
   timeout_seconds: 60
   max_concurrency: 1
   judges:
