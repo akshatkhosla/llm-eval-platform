@@ -20,7 +20,6 @@
 - [API Reference](#api-reference)
 - [CLI Reference](#cli-reference)
 - [Tech Stack](#tech-stack)
-- [Live Demo](#live-demo)
 - [Development](#development)
 - [License](#license)
 
@@ -424,15 +423,6 @@ EVALPLATFORM_API_URL=https://my-api.onrender.com evalplatform list
 | Linting | Ruff (lint + format) |
 | Testing | pytest + pytest-asyncio |
 | Deployment | Docker + Docker Compose + Render |
-
----
-
-## Live Demo
-
-| Service | URL |
-|---------|-----|
-| API (Render) | _Deploy in progress_ |
-| Dashboard (Vercel) | _Deploy in progress_ |
 
 ---
 
