@@ -25,7 +25,9 @@ COPY --from=builder /install /usr/local
 
 # Copy application source
 COPY src/ src/
+COPY alembic.ini .
+COPY alembic/ alembic/
 
 EXPOSE 8000
 
-CMD uvicorn src.evalplatform.api.app:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD alembic upgrade head && uvicorn src.evalplatform.api.app:app --host 0.0.0.0 --port ${PORT:-8000}
