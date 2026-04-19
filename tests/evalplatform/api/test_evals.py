@@ -53,6 +53,8 @@ def _make_run(**kwargs: object) -> EvalRun:
         "error_message": None,
         "total_samples": None,
         "completed_samples": 0,
+        "passed_samples": 0,
+        "failed_samples": 0,
         "aggregate_scores": None,
         "total_tokens": 0,
         "total_latency_ms": 0.0,
