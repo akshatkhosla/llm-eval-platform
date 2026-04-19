@@ -1,5 +1,6 @@
 """Tests for judge implementations."""
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -43,7 +44,7 @@ class TestParseJudgeJson:
         assert result["score"] == 5
 
     def test_invalid_json_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(json.JSONDecodeError):
             _parse_judge_json("no json here")
 
 

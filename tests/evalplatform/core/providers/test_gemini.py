@@ -1,20 +1,21 @@
 """Tests for GeminiProvider (API calls are mocked)."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from evalplatform.core.providers.base import LLMResponse
 from evalplatform.core.providers.gemini import GeminiProvider, _is_rate_limit_error
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_client(text: str = "response text", prompt_tokens: int = 10, completion_tokens: int = 20) -> MagicMock:
+def _make_mock_client(
+    text: str = "response text", prompt_tokens: int = 10, completion_tokens: int = 20
+) -> MagicMock:
     """Build a mock genai.Client whose async generate_content returns a canned response."""
     mock_response = MagicMock()
     mock_response.text = text
@@ -58,9 +59,8 @@ def test_is_rate_limit_error_false():
 
 
 def test_unsupported_model_raises():
-    with patch("google.genai.Client"):
-        with pytest.raises(ValueError, match="Unsupported Gemini model"):
-            GeminiProvider(model="gpt-4o", api_key="test")
+    with patch("google.genai.Client"), pytest.raises(ValueError, match="Unsupported Gemini model"):
+        GeminiProvider(model="gpt-4o", api_key="test")
 
 
 # ---------------------------------------------------------------------------
@@ -139,12 +139,12 @@ async def test_generate_retries_on_rate_limit():
         side_effect=[rate_limit_exc, rate_limit_exc, mock_response]
     )
 
-    with patch("google.genai.Client", return_value=mock_client):
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
-            result = await provider.generate(
-                prompt="test", system=None, temperature=0.0, max_tokens=10
-            )
+    with (
+        patch("google.genai.Client", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
+        result = await provider.generate(prompt="test", system=None, temperature=0.0, max_tokens=10)
 
     assert result.text == "ok after retry"
     assert mock_client.aio.models.generate_content.call_count == 3
@@ -161,13 +161,13 @@ async def test_generate_raises_after_max_retries():
     mock_client = MagicMock()
     mock_client.aio.models.generate_content = AsyncMock(side_effect=rate_limit_exc)
 
-    with patch("google.genai.Client", return_value=mock_client):
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
-            with pytest.raises(Exception, match="rate limit"):
-                await provider.generate(
-                    prompt="test", system=None, temperature=0.0, max_tokens=10
-                )
+    with (
+        patch("google.genai.Client", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(Exception, match="rate limit"),
+    ):
+        provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
+        await provider.generate(prompt="test", system=None, temperature=0.0, max_tokens=10)
 
     assert mock_client.aio.models.generate_content.call_count == 5  # _MAX_RETRIES
 
@@ -179,13 +179,13 @@ async def test_generate_reraises_non_rate_limit_immediately():
     mock_client = MagicMock()
     mock_client.aio.models.generate_content = AsyncMock(side_effect=non_rate_exc)
 
-    with patch("google.genai.Client", return_value=mock_client):
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
-            with pytest.raises(Exception, match="internal server error"):
-                await provider.generate(
-                    prompt="test", system=None, temperature=0.0, max_tokens=10
-                )
+    with (
+        patch("google.genai.Client", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        pytest.raises(Exception, match="internal server error"),
+    ):
+        provider = GeminiProvider(model="gemini-2.5-flash", api_key="key")
+        await provider.generate(prompt="test", system=None, temperature=0.0, max_tokens=10)
 
     # No retries for non-rate-limit errors
     assert mock_client.aio.models.generate_content.call_count == 1

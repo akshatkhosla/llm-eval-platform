@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from evalplatform.db.models import EvalResult, EvalRun, ResultStatus, RunStatus
 from evalplatform.db import repos
+from evalplatform.db.models import EvalResult, EvalRun, ResultStatus, RunStatus
 
 
 def _make_run(**kwargs: object) -> EvalRun:
@@ -71,7 +71,7 @@ async def test_create_run_adds_and_commits() -> None:
 
     async def _refresh(obj: EvalRun) -> None:
         obj.id = uuid.uuid4()
-        obj.created_at = datetime.now(timezone.utc)
+        obj.created_at = datetime.now(UTC)
 
     session.refresh.side_effect = _refresh
 
@@ -155,7 +155,7 @@ async def test_update_run_status_to_running_sets_started_at() -> None:
 
 
 async def test_update_run_status_to_completed_sets_completed_at() -> None:
-    run = _make_run(status=RunStatus.running, started_at=datetime.now(timezone.utc))
+    run = _make_run(status=RunStatus.running, started_at=datetime.now(UTC))
     session = _mock_session()
 
     scalar_result = MagicMock()
